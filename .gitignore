@@ -1,0 +1,6 @@
+# macOS metadata (the exFAT drive writes ._ files next to everything)
+._*
+.DS_Store
+
+# commercial font: kept locally, not published (see README)
+assets/fonts/

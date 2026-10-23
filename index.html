@@ -1,0 +1,435 @@
+<!doctype html>
+<!--
+  MENDES — header.
+  Loader: the ring turns behind a single iPod whose screen counts up to 100%. Then four more iPods burst out from
+  behind it and curve into an arc, float and settle; MENDES writes itself across the top, the menu rises from the
+  bottom and the ring grows larger and brighter. The ring, wordmark and menu follow blink.capital's intro (ring
+  video and bloom, letter-by-letter wordmark, menu rise). Once it has settled, scroll, drag or the arrow keys turn
+  the arc (or click an iPod), and the iPod that comes to the front flips round to face you.
+  three.js builds the iPods in code; their screens play the clips in assets/screens. One file, no build step.
+  Serve it over http (the screens are videos drawn into WebGL), not file://.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MENDES</title>
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="data:,">
+<style>
+@font-face{font-family:"Guida Mono Pro";src:url(assets/fonts/GuidaMonoPro-Regular.woff2) format("woff2");font-weight:400;font-display:block}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;overscroll-behavior:none}
+.hd{position:fixed;inset:0;overflow:hidden;background:#000;--sq:max(100vw,100vh);-webkit-user-select:none;user-select:none}
+/* the ring: blink.capital's ring video, kept square and centred; its edges fade out so it can sit small in the loader */
+.ring{position:absolute;left:50%;top:50%;width:var(--sq);height:var(--sq);margin:calc(var(--sq) / -2) 0 0 calc(var(--sq) / -2);object-fit:cover;pointer-events:none;opacity:0;
+  -webkit-mask-image:radial-gradient(closest-side at 50% 48%,#000 82%,transparent 100%);mask-image:radial-gradient(closest-side at 50% 48%,#000 82%,transparent 100%);will-change:transform,opacity}
+.hd canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hd canvas.grab{cursor:grab}.hd canvas.point{cursor:pointer}.hd canvas.held{cursor:grabbing}
+/* MENDES, spread edge to edge as on blink.capital; it writes itself in when the iPods land */
+.logo{position:absolute;left:0;right:0;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:12px;pointer-events:none}
+.logo span{font:400 64px/75% "Guida Mono Pro",ui-monospace,monospace;color:#fff;opacity:0}
+.hd.on .logo span{animation:write .9s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(450ms + var(--i) * 150ms)}
+@keyframes write{0%{opacity:0;filter:blur(12px);transform:translateY(20px)}55%{opacity:.5}100%{opacity:1;filter:none;transform:none}}
+@media(min-width:1728px){.logo span{font-size:80px}}
+@media(min-width:1920px){.logo span{font-size:104px}}
+@media(max-width:767px){.logo span{font-size:48px}}
+/* the menu rises from the bottom bar */
+.menu{position:absolute;left:12px;right:12px;bottom:12px;z-index:2;display:flex;justify-content:center;opacity:0;transform:translateY(50px);pointer-events:none}
+.hd.on .menu{animation:menu 3s cubic-bezier(.5,0,0,1) .7s both;pointer-events:auto}
+@keyframes menu{0%{opacity:0;transform:translateY(50px)}22%{opacity:1}100%{opacity:1;transform:none}}
+.menu nav{display:flex;align-items:center;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:#f2f2f21a}
+.menu a{color:#fff;font:400 13px/1.2 "Guida Mono Pro",ui-monospace,monospace;padding:8px;text-transform:uppercase;text-decoration:none;white-space:nowrap;transition:all .2s ease-in-out}
+.menu a.current,.menu a:hover{background:#fff;color:#000}
+.menu a:focus-visible{outline:1px solid #fff;outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.hd.on .logo span{animation-duration:.01s}.hd.on .menu{animation-duration:.01s}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+</head>
+<body>
+<header class="hd" id="hd">
+  <h1 class="sr">MENDES</h1>
+  <video class="ring" src="assets/ring.mp4" autoplay muted loop playsinline preload="auto" aria-hidden="true"></video>
+  <canvas aria-hidden="true"></canvas>
+  <div class="logo" aria-hidden="true"><span style="--i:0">M</span><span style="--i:1">E</span><span style="--i:2">N</span><span style="--i:3">D</span><span style="--i:4">E</span><span style="--i:5">S</span></div>
+  <div class="menu">
+    <nav aria-label="Main">
+      <a class="current" href="#" aria-current="page">Home</a><a href="#origin">Origin</a><a href="#how-it-works">How it works</a><a href="#strategy">Strategy</a><a href="#people">The people behind it</a><a href="#contacts">Contacts</a>
+    </nav>
+  </div>
+</header>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ---------- settings ----------
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const CONFIG = {
+  // clips in assets/screens: the first starts at the front, then round to the right; the last sits to its left
+  screens: ['nomada-toast', 'viral-loop', 'supporter', 'x-ray', 'road-test', 'ai-studio'],
+  loadMin: reduce ? 1200 : 3600, // the counter takes at least this long, ms (it also waits for the clips)
+  holdAt100: 450,                // a beat on 100% before the burst, ms
+  tilt: -0.1,                    // the arc leans, left end higher (rad)
+  float: reduce ? 0 : 0.03,      // how far the iPods keep bobbing once settled
+  flip: !reduce,                 // the iPod that comes to the front spins round to face you
+  ring: {                        // the ring video: scale, vertical shift (share of its size), opacity
+    load: { s: 0.5, y: -0.068, o: 0.55 },
+    end: { s: 1.08, y: 0.055, o: 1 },
+    dur: 2600
+  }
+};
+
+const hd = document.getElementById('hd'), cv = hd.querySelector('canvas'), ringV = hd.querySelector('.ring');
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const eo = t => 1 - Math.pow(1 - t, 3);
+const eio = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const eback = (t, k = 1.3) => 1 + (k + 1) * Math.pow(t - 1, 3) + k * Math.pow(t - 1, 2);
+const wrap = (v, n) => ((v % n) + n) % n;
+
+// ---------- renderer, camera, light ----------
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setClearColor(0x000000, 0);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+camera.position.set(0, 0, 5.4);
+const key = new THREE.DirectionalLight(0xffffff, 1.1);
+key.position.set(-3, 4, 5);
+const fill = new THREE.HemisphereLight(0xffffff, 0x1a1418, 0.7);
+scene.add(key, fill);
+
+// the chrome reflects a neutral studio, with the ring's colours (violet and blue one side, pink and red-orange
+// the other) catching the rims
+function environment() {
+  const env = new RoomEnvironment();
+  const stops = [[-Math.PI, 0xb8c8ff], [-0.75 * Math.PI, 0xff5fa0], [-0.5 * Math.PI, 0xff4a2e], [0, 0xd13dff], [0.5 * Math.PI, 0x7b3dff], [0.75 * Math.PI, 0x4a5cff], [Math.PI, 0xb8c8ff]];
+  const ring = (radius, tube, z, k) => {
+    const geo = new THREE.TorusGeometry(radius, tube, 24, 160), p = geo.attributes.position, col = [], c = new THREE.Color(), a0 = new THREE.Color(), a1 = new THREE.Color();
+    for (let i = 0; i < p.count; i++) {
+      const a = Math.atan2(p.getY(i), p.getX(i));
+      let j = 0; while (j < stops.length - 2 && a > stops[j + 1][0]) j++;
+      const t = (a - stops[j][0]) / (stops[j + 1][0] - stops[j][0]);
+      c.lerpColors(a0.set(stops[j][1]), a1.set(stops[j + 1][1]), t);
+      col.push(c.r * k, c.g * k, c.b * k);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+    m.position.z = z; env.add(m);
+  };
+  ring(4.2, 0.35, -3, 2.2);   // behind: lights the edges
+  ring(5, 0.3, 4, 0.9);       // in front, dimmer: the faces catch a hint of it
+  const pm = new THREE.PMREMGenerator(renderer);
+  const tex = pm.fromScene(env, 0.04).texture;
+  pm.dispose();
+  return tex;
+}
+scene.environment = environment();
+scene.environmentIntensity = 0;
+
+// ---------- the iPod ----------
+const W = 1, H = 1.66, D = 0.15, SY = 0.43, WY = -0.34; // body, screen centre, wheel centre (body widths)
+function rrect(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return new THREE.ShapeGeometry(s, 8);
+}
+// the click wheel: MENU, skip, skip, play/pause, drawn once
+function wheelTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const g = c.getContext('2d'), R = 256;
+  const grd = g.createRadialGradient(R, R * 0.7, 30, R, R, R);
+  grd.addColorStop(0, '#1d1d20'); grd.addColorStop(1, '#070708');
+  g.fillStyle = grd; g.beginPath(); g.arc(R, R, R, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#000'; g.beginPath(); g.arc(R, R, 0.1 / 0.29 * R + 7, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#ececec';
+  g.font = '600 44px "Helvetica Neue", Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('MENU', R, 72);
+  const tri = (x, y, s, dir) => { g.beginPath(); g.moveTo(x, y - s); g.lineTo(x + dir * s * 1.25, y); g.lineTo(x, y + s); g.closePath(); g.fill(); };
+  g.fillRect(48, R - 15, 6, 30); tri(80, R, 15, -1); tri(100, R, 15, -1);         // ⏮
+  g.fillRect(458, R - 15, 6, 30); tri(432, R, 15, 1); tri(412, R, 15, 1);         // ⏭
+  tri(226, 446, 15, 1); g.fillRect(252, 431, 7, 30); g.fillRect(266, 431, 7, 30); // ⏯
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+const GEO = {
+  shell: new RoundedBoxGeometry(W, H, D, 5, 0.075),
+  face: rrect(W - 0.04, H - 0.04, 0.058),
+  bezel: rrect(0.86, 0.665, 0.03),
+  screen: new THREE.PlaneGeometry(0.8, 0.6),
+  wheel: new THREE.CircleGeometry(0.29, 96),
+  button: new THREE.CircleGeometry(0.1, 64)
+};
+const MAT = {
+  shell: new THREE.MeshPhysicalMaterial({ color: 0xc4c1c7, metalness: 1, roughness: 0.12, clearcoat: 0.4, clearcoatRoughness: 0.15 }),
+  face: new THREE.MeshStandardMaterial({ color: 0x645f65, metalness: 0.85, roughness: 0.36 }), // graphite
+  bezel: new THREE.MeshStandardMaterial({ color: 0x020202, metalness: 0.2, roughness: 0.25 }),
+  // a sheet of glass over the screen that only adds reflections
+  glass: new THREE.MeshStandardMaterial({ color: 0x000000, metalness: 1, roughness: 0.05, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }),
+  wheel: new THREE.MeshStandardMaterial({ map: wheelTexture(), metalness: 0.05, roughness: 0.55 })
+};
+
+const arc = new THREE.Group();
+scene.add(arc);
+const SW = 512, SH = 384; // screen canvas, 4:3 like the clips
+function pod(name, i) {
+  const g = new THREE.Group(), z = D / 2;
+  const part = (geo, mat, y, dz) => { const m = new THREE.Mesh(geo, mat); m.position.set(0, y, z + dz); g.add(m); return m; };
+  const shell = new THREE.Mesh(GEO.shell, MAT.shell); g.add(shell);
+  part(GEO.face, MAT.face, 0, 0.0008);
+  part(GEO.bezel, MAT.bezel, SY, 0.0016);
+  const canvas = document.createElement('canvas'); canvas.width = SW; canvas.height = SH;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter;
+  part(GEO.screen, new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }), SY, 0.0024);
+  part(GEO.bezel, MAT.glass, SY, 0.0032);
+  part(GEO.wheel, MAT.wheel, WY, 0.0016);
+  part(GEO.button, MAT.face, WY, 0.0024);
+  arc.add(g);
+  const video = document.createElement('video');
+  Object.assign(video, { src: `assets/screens/${name}.mp4`, muted: true, loop: true, playsInline: true, preload: 'auto' });
+  const poster = new Image(); poster.src = `assets/screens/${name}.jpg`;
+  const it = { i, name, g, ctx: canvas.getContext('2d'), tex, video, poster, ph: i * 1.7 + 0.4, hov: 0, flip: null, ex: null };
+  shell.userData.it = it;
+  return it;
+}
+const items = CONFIG.screens.map(pod);
+const N = items.length;
+
+// where an iPod sits on the arc for a (fractional) slot: 0 is the front, ±1 beside it, ±2 at the screen edges
+function pose(s) {
+  const a = Math.abs(s), sg = Math.sign(s);
+  return { x: sg * (1.62 * Math.min(a, 1) + 1.68 * Math.max(0, a - 1)), y: -0.08 * s * s, z: -2 * (1 - Math.exp(-1.5 * a)), ry: -0.74 * Math.tanh(0.65 * s) };
+}
+const slotOf = (it, off) => wrap(it.i - off + N / 2, N) - N / 2;
+
+// ---------- the floor (loader only): the iPod's reflection, fading with distance ----------
+const floorShader = {
+  name: 'FloorReflection',
+  uniforms: { color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null }, opacity: { value: 0 } },
+  vertexShader: `uniform mat4 textureMatrix; varying vec4 vUv; varying vec2 vP;
+    void main() { vUv = textureMatrix * vec4(position, 1.0); vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform vec3 color; uniform sampler2D tDiffuse; uniform float opacity; varying vec4 vUv; varying vec2 vP;
+    void main() {
+      vec4 b = texture2DProj(tDiffuse, vUv);
+      float f = exp(-length(vP * vec2(0.8, 1.7)) * 1.25);
+      gl_FragColor = vec4(b.rgb * color, b.a * f * opacity);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`
+};
+const floor = new Reflector(new THREE.PlaneGeometry(10, 10), { shader: floorShader, color: 0x8a8a8a, textureWidth: 1024, textureHeight: 1024, clipBias: 0.003 });
+floor.material.transparent = true;
+floor.material.depthWrite = false;
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -H / 2 - 0.004;
+scene.add(floor);
+
+// ---------- screens ----------
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+let pct = 0;
+function digits(g, a) {
+  g.save(); g.globalAlpha = a; g.fillStyle = '#fff';
+  g.font = '400 116px "Guida Mono Pro", ui-monospace, monospace'; g.letterSpacing = '12px';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(`${Math.round(pct)}%`, SW / 2 + 6, SH / 2 + 4);
+  g.restore();
+}
+// the front iPod shows a little player, as in the concept
+function player(g, v, a) {
+  if (a <= 0.01) return;
+  g.save(); g.globalAlpha = a;
+  const grd = g.createLinearGradient(0, SH * 0.6, 0, SH); grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,0,.72)');
+  g.fillStyle = grd; g.fillRect(0, SH * 0.6, SW, SH * 0.4);
+  g.fillStyle = '#fff'; g.strokeStyle = '#fff'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(24, SH - 52); g.lineTo(44, SH - 40); g.lineTo(24, SH - 28); g.closePath(); g.fill();
+  g.font = '500 22px "Helvetica Neue", Helvetica, Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
+  const t = v.currentTime || 0, d = v.duration || 10;
+  g.fillText(`${fmt(t)} / ${fmt(d)}`, 60, SH - 40);
+  const x = SW - 46, y = SH - 52, k = 8; // fullscreen corners
+  g.beginPath(); g.moveTo(x, y + k); g.lineTo(x, y); g.lineTo(x + k, y); g.moveTo(x + 24 - k, y); g.lineTo(x + 24, y); g.lineTo(x + 24, y + k);
+  g.moveTo(x + 24, y + 24 - k); g.lineTo(x + 24, y + 24); g.lineTo(x + 24 - k, y + 24); g.moveTo(x + k, y + 24); g.lineTo(x, y + 24); g.lineTo(x, y + 24 - k); g.stroke();
+  g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(22, SH - 14, SW - 44, 3);
+  g.fillStyle = '#fff'; g.fillRect(22, SH - 14, (SW - 44) * clamp(t / d), 3);
+  g.restore();
+}
+function drawScreen(it, s, now, appear) {
+  const g = it.ctx;
+  g.fillStyle = '#000'; g.fillRect(0, 0, SW, SH);
+  if (phase === 'load') { digits(g, appear); it.tex.needsUpdate = true; return; }
+  const u = clamp((now - T0) / 420); // the front screen hands over from 100% to its clip
+  const v = it.video, src = v.readyState >= 2 ? v : it.poster;
+  if (src === v || it.poster.complete) { g.globalAlpha = it.i === 0 ? u : 1; g.drawImage(src, 0, 0, SW, SH); g.globalAlpha = 1; }
+  if (it.i === 0 && u < 1) digits(g, 1 - u);
+  player(g, v, (1 - clamp(Math.abs(s) * 2.2)) * u);
+  it.tex.needsUpdate = true;
+}
+
+// ---------- loading: fonts, the ring and the clips ----------
+const waits = [document.fonts.load('400 116px "Guida Mono Pro"')];
+const ready = el => new Promise(r => { if (el.readyState >= 3) r(); else { el.addEventListener('canplaythrough', r, { once: true }); el.addEventListener('error', r, { once: true }); } });
+waits.push(ready(ringV));
+for (const it of items) { waits.push(ready(it.video)); it.video.load(); }
+let loaded = 0;
+waits.forEach(p => p.then(() => loaded++, () => loaded++));
+
+// ---------- interaction (once the arc has settled) ----------
+let offset = 0, target = 0, settled = false, drag = null, hover = null, wheelAcc = 0, lastStep = 0;
+const pointer = new THREE.Vector2(9, 9), ray = new THREE.Raycaster(), par = { x: 0, y: 0 };
+function goTo(to) {
+  to = Math.round(to);
+  const was = Math.round(target);
+  target = to;
+  if (to === was || !CONFIG.flip) return;
+  const front = items[wrap(to, N)];
+  front.flip = { t0: performance.now(), dir: to > was ? -1 : 1 };
+}
+function pick(e) {
+  const r = cv.getBoundingClientRect();
+  pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(pointer, camera);
+  const hit = ray.intersectObjects(items.filter(it => it.g.visible).map(it => it.g.children[0]), false)[0];
+  return hit ? hit.object.userData.it : null;
+}
+cv.addEventListener('pointermove', e => {
+  par.x = e.clientX / innerWidth * 2 - 1; par.y = e.clientY / innerHeight * 2 - 1;
+  if (!settled) return;
+  if (drag) {
+    const dx = e.clientX - drag.x;
+    drag.moved = Math.max(drag.moved, Math.abs(dx));
+    target = drag.o - dx / (innerWidth * 0.24);
+  }
+  hover = drag ? null : pick(e);
+  cv.className = drag ? 'held' : hover && Math.abs(slotOf(hover, offset)) > 0.5 ? 'point' : 'grab';
+});
+cv.addEventListener('pointerdown', e => {
+  if (!settled) return;
+  drag = { x: e.clientX, o: target, moved: 0, from: Math.round(target) };
+  cv.setPointerCapture(e.pointerId); cv.className = 'held';
+});
+const release = e => {
+  if (!drag) return;
+  const d = drag; drag = null; cv.className = 'grab';
+  if (d.moved < 6) {
+    const it = pick(e);
+    target = d.from;
+    if (it) { const s = Math.round(slotOf(it, d.from)); if (s) goTo(d.from + s); }
+  } else { target = d.from; goTo(Math.round(d.o - (e.clientX - d.x) / (innerWidth * 0.24))); }
+};
+cv.addEventListener('pointerup', release);
+cv.addEventListener('pointercancel', release);
+cv.addEventListener('pointerleave', () => { hover = null; });
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (!settled) return;
+  wheelAcc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  const now = performance.now();
+  if (Math.abs(wheelAcc) > 40 && now - lastStep > 480) { goTo(Math.round(target) + Math.sign(wheelAcc)); wheelAcc = 0; lastStep = now; }
+}, { passive: false });
+addEventListener('keydown', e => {
+  if (!settled) return;
+  if (e.key === 'ArrowRight') goTo(Math.round(target) + 1);
+  else if (e.key === 'ArrowLeft') goTo(Math.round(target) - 1);
+});
+
+// ---------- layout ----------
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.position.z = 5.4 * Math.max(1, Math.pow(16 / 9 / camera.aspect, 0.85)); // narrower screens step back to keep the arc
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- the timeline ----------
+const t0 = performance.now();
+let phase = 'load', T100 = 0, T0 = 0, shown = 0;
+function reveal(now) {
+  phase = 'reveal'; T0 = now;
+  hd.classList.add('on');
+  for (const it of items) it.video.play().catch(() => {});
+  // the other iPods burst out from behind the front one, nearest first, and spin as they fly
+  for (const it of items) {
+    const s = slotOf(it, 0), a = Math.abs(s);
+    if (it.i && a < 2.9) it.ex = { t0: now + 60 + 90 * (a - 1) + (s > 0 ? 40 : 0), dur: 1350, spin: reduce ? 0 : (s > 0 ? -1 : 1) * Math.PI * 2 };
+  }
+}
+function frame() {
+  requestAnimationFrame(frame);
+  const now = performance.now(), dt = Math.min(64, now - (frame.lt || now)); frame.lt = now;
+  const appear = eo(clamp((now - t0) / 1600)); // the iPod comes up out of the dark
+  scene.environmentIntensity = 0.72 * appear;
+  key.intensity = 0.9 * appear;
+  fill.intensity = 0.32 * appear;
+
+  if (phase === 'load') {
+    const tf = clamp((now - t0) / CONFIG.loadMin), af = loaded / waits.length;
+    const goal = 100 * Math.min(eio(tf), now - t0 > 12000 ? 1 : af);
+    shown += (goal - shown) * (1 - Math.exp(-dt / 120));
+    if (goal >= 100 && shown > 99.5) shown = 100;
+    pct = Math.floor(shown);
+    if (pct >= 100 && !T100) T100 = now;
+    if (T100 && now - T100 > CONFIG.holdAt100) reveal(now);
+  }
+  if (phase === 'reveal' && !settled && now - T0 > 1800) { settled = true; cv.className = 'grab'; }
+
+  // ring: small and dim around the loader, then larger and brighter (blink.capital's bloom)
+  const R = CONFIG.ring, k = phase === 'load' ? 0 : eio(clamp((now - T0) / R.dur));
+  ringV.style.transform = `translateY(${(lerp(R.load.y, R.end.y, k) * 100).toFixed(3)}%) scale(${lerp(R.load.s, R.end.s, k).toFixed(4)})`;
+  ringV.style.opacity = (lerp(R.load.o, R.end.o, k) * clamp((now - t0) / 1200)).toFixed(3);
+
+  // floor reflection only while the iPod stands on it
+  floor.material.uniforms.opacity.value = phase === 'load' ? appear : 1 - clamp((now - T0) / 450);
+  floor.visible = floor.material.uniforms.opacity.value > 0.001;
+
+  offset += (target - offset) * (1 - Math.exp(-dt / 150));
+  par.sx = lerp(par.sx || 0, par.x, 0.05); par.sy = lerp(par.sy || 0, par.y, 0.05);
+  arc.rotation.set(par.sy * 0.035, par.sx * 0.06, phase === 'load' ? 0 : CONFIG.tilt * eio(clamp((now - T0 - 100) / 1400)));
+
+  const amp = phase === 'load' ? 0 : CONFIG.float + (reduce ? 0 : 0.09 * clamp(1 - (now - T0 - 900) / 3000)); // floating, then settling
+  for (const it of items) {
+    const s = slotOf(it, offset), P = pose(s);
+    let { x, y, z, ry } = P, rz = 0, sc = 1, vis = Math.abs(s) < 2.95;
+    if (phase === 'load') {
+      vis = it.i === 0; x = y = z = 0;
+      ry = reduce ? 0 : 0.06 * Math.sin((now - t0) * 0.0009);
+    } else {
+      if (it.i === 0) y += Math.sin(Math.PI * clamp((now - T0) / 900)) * 0.07; // the front iPod lifts as the others burst out
+      if (it.ex) {
+        const u = clamp((now - it.ex.t0) / it.ex.dur), e = eback(u), e2 = eo(u);
+        x = lerp(0, x, e); y = lerp(0, y, e); z = lerp(-0.4, z, e); ry += (1 - e2) * it.ex.spin; sc = lerp(0.85, 1, e2);
+        if (u >= 1) it.ex = null;
+      }
+      y += amp * Math.sin(now * 0.0012 + it.ph);
+      rz += amp * 0.5 * Math.sin(now * 0.001 + it.ph * 1.7);
+      ry += amp * 0.4 * Math.sin(now * 0.0009 + it.ph * 0.6);
+      if (it.flip) { const u = clamp((now - it.flip.t0) / 950); ry += it.flip.dir * Math.PI * 2 * eio(u); if (u >= 1) it.flip = null; }
+      it.hov += ((hover === it && Math.abs(s) > 0.5 ? 1 : 0) - it.hov) * 0.12;
+      z += it.hov * 0.14;
+    }
+    it.g.visible = vis;
+    if (!vis) continue;
+    it.g.position.set(x, y, z);
+    it.g.rotation.set(0, ry, rz);
+    it.g.scale.setScalar(sc);
+    drawScreen(it, s, now, appear);
+  }
+  renderer.render(scene, camera);
+}
+frame();
+if (/[?&]tgtest/.test(location.search)) window.__h = { items, get phase() { return phase; }, get pct() { return pct; }, goTo, camera, CONFIG };
+</script>
+</body>
+</html>
