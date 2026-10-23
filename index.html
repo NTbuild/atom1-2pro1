@@ -6,8 +6,8 @@
   and the ring pushes out with the burst, larger and brighter. The ring, wordmark and menu follow blink.capital's
   intro (ring video and bloom, letter-by-letter wordmark, menu rise). The row is agrumeafarm.it's jar slider (used
   with permission) with iPods for jars: the same positions, sizes, blur and brightness, the wheel and drag glide
-  and fling, each iPod swinging, leaning and turning on its own spring as it travels, the pull toward the pointer,
-  and one full spin only when the pointer rests on an iPod. Click an iPod to bring it to the middle.
+  and fling, each iPod swinging, leaning and turning on its own spring as it travels, and the pull toward the
+  pointer. Hovering never spins an iPod: clicking one spins it round once and brings it to the middle.
   three.js builds the iPods in code; their screens play the clips in assets/screens. One file, no build step.
   Serve it over http (the screens are videos drawn into WebGL), not file://.
 -->
@@ -75,7 +75,7 @@ const CONFIG = {
   screens: ['nomada-toast', 'viral-loop', 'supporter', 'x-ray', 'road-test', 'ai-studio'],
   loadMin: reduce ? 1200 : 3600, // the counter takes at least this long, ms (it also waits for the clips)
   holdAt100: 450,                // a beat on 100% before the burst, ms
-  spin: true,                    // an iPod spins round once, only when the pointer rests on it
+  spin: true,                    // an iPod spins round once, only when it's clicked
   ring: {                        // the ring video: scale, vertical shift (share of its size), opacity
     load: { s: 0.5, y: -0.059, o: 0.55 },
     end: { s: 1.08, y: 0.054, o: 1 },
@@ -100,7 +100,7 @@ const CONFIG = {
     speed: 2400, speedLean: 6, speedTurn: 38, squash: 0.05, // on the move: lean, turn and shrink, by speed (px/s)
     stiffness: 70, stiffnessVar: 0.3, damping: 9,           // each iPod's own spring, slightly different per iPod
     near: { turn: 30, lean: 5, lift: 0.05, pull: 16, radius: 1.6, floor: 0.3, parallax: 26 }, // the pointer's pull
-    spinMs: 2000, dwell: 260, quiet: 1.4       // the hover spin: one turn, after a short rest, when the row is still
+    spinMs: 2000                               // the click spin: one full turn
   }
 };
 
@@ -224,7 +224,7 @@ function pod(name, i) {
   const spring = () => ({ v: 0, vel: 0 });
   const it = { i, name, g, ctx: canvas.getContext('2d'), tex, video, poster, ph: i * 1.7 + 0.4, ex: null, blurN: 0, bright: 1, front: 0,
     turn: spring(), lean: spring(), lift: spring(), pullX: spring(), pullY: spring(), // each iPod's own springs, as the jars have
-    over: false, queued: false, enterT: -1, dwell: -1, spinT: -1 };
+    spinT: -1 };
   shell.userData.it = it;
   // the mask pass reads each iPod's blur and brightness from here
   g.traverse(m => { if (m.isMesh) m.onBeforeRender = (r, s, c, geo, mat) => { if (mat === maskMat) { mat.uniforms.uBlur.value = it.blurN; mat.uniforms.uBright.value = it.bright; mat.uniformsNeedUpdate = true; } }; });
@@ -327,7 +327,7 @@ waits.forEach(p => p.then(() => loaded++, () => loaded++));
 
 // ---------- interaction (once the burst has landed), as the jar slider takes it ----------
 // sl.H is the row's scroll offset (px), easing toward sl.ae, which the wheel, a drag or a fling set
-const sl = { H: 0, ae: 0, v: 0, lastMove: -1, P: 0, ppx: 0, ppy: 0, mx: 0, my: 0, inside: false, drag: null, flingV: 0 };
+const sl = { H: 0, ae: 0, v: 0, P: 0, ppx: 0, ppy: 0, mx: 0, my: 0, inside: false, drag: null, flingV: 0 };
 let settled = false, hover = null;
 const pointer = new THREE.Vector2(9, 9), ray = new THREE.Raycaster();
 function pick(x, y) {
@@ -336,13 +336,8 @@ function pick(x, y) {
   const hit = ray.intersectObjects(items.filter(it => it.g.visible).map(it => it.g.children[0]), false)[0];
   return hit ? hit.object.userData.it : null;
 }
-// pointer enter and leave per iPod, which queue its hover spin
-function hoverTo(h, now) {
-  if (h === hover) return;
-  if (hover) { hover.over = false; hover.queued = false; }
-  if (h) { h.over = true; h.queued = fine.matches; h.enterT = now; }
-  hover = h;
-}
+// which iPod the pointer is over (for the cursor; hovering never spins one)
+const hoverTo = h => { hover = h; };
 hd.addEventListener('pointermove', e => {
   sl.inside = e.pointerType !== 'touch'; sl.mx = e.clientX; sl.my = e.clientY;
   if (!settled) return;
@@ -359,10 +354,10 @@ hd.addEventListener('pointermove', e => {
     sl.ae += dx * CONFIG.slider.drag;
     return;
   }
-  hoverTo(pick(e.clientX, e.clientY), now);
+  hoverTo(pick(e.clientX, e.clientY));
   cv.className = hover ? 'point' : 'grab';
 }, { passive: true });
-hd.addEventListener('pointerleave', () => { sl.inside = false; hoverTo(null, performance.now()); });
+hd.addEventListener('pointerleave', () => { sl.inside = false; hoverTo(null); });
 cv.addEventListener('pointerdown', e => {
   if (!settled) return;
   sl.drag = { id: e.pointerId, x0: e.clientX, x: e.clientX, t: e.timeStamp, on: false };
@@ -376,9 +371,12 @@ const release = e => {
     const S = CONFIG.slider;
     sl.ae += clamp(sl.flingV, -S.flingMax, S.flingMax) * S.drag * S.fling;
   } else {
-    // a click brings that iPod to the middle
+    // a click spins that iPod round once and brings it to the middle
     const it = pick(e.clientX, e.clientY);
-    if (it) sl.ae += L.w / 2 - trackX(it.i, sl.ae);
+    if (it) {
+      if (CONFIG.spin && it.spinT < 0) it.spinT = performance.now();
+      sl.ae += L.w / 2 - trackX(it.i, sl.ae);
+    }
   }
   sl.flingV = 0;
   cv.className = hover ? 'point' : 'grab';
@@ -475,8 +473,8 @@ const spring = (s, target, k, r) => {
   s.v += s.vel * r;
   if (Math.abs(s.vel) < 0.001 && Math.abs(target - s.v) < 0.001) { s.v = target; s.vel = 0; }
 };
-// one iPod's pose in the jar slider, in screen px (it also steps that iPod's springs and its hover spin)
-function slide(it, r, now, g, E, quiet, re) {
+// one iPod's pose in the jar slider, in screen px (it also steps that iPod's springs and its spin)
+function slide(it, r, now, g, E, re) {
   const S = CONFIG.slider, i = it.i;
   const x = trackX(i, sl.H), q = x / L.w;
   const fx = (q + S.spread[0] * S.spread[1] * Math.tanh((q - 0.5) / S.spread[1])) * L.w;
@@ -499,10 +497,7 @@ function slide(it, r, now, g, E, quiet, re) {
   }
   const k = S.stiffness * (1 - S.stiffnessVar / 2 + S.stiffnessVar * ((i * 0.618034) % 1));
   spring(it.turn, turn, k, r); spring(it.lean, lean, k, r); spring(it.lift, lift, k, r); spring(it.pullX, pullX, k, r); spring(it.pullY, pullY, k, r);
-  // the hover spin: queued when the pointer comes on; it starts once the row is quiet, after a short rest
-  // (at once if the pointer came on after the row had stopped), and runs one full turn
-  if (!quiet || !it.over) it.dwell = -1; else if (it.dwell < 0) it.dwell = now;
-  if (CONFIG.spin && fine.matches && it.over && it.queued && it.spinT < 0 && it.dwell >= 0 && (it.enterT > sl.lastMove || now - it.dwell >= S.dwell)) { it.spinT = now; it.queued = false; }
+  // the spin a click set off: one full turn
   let spin = 0;
   if (it.spinT >= 0) { const t = (now - it.spinT) / S.spinMs; if (t >= 1) it.spinT = -1; else spin = equint(t); }
   const ex = Et + it.pullX.v, ey = offY + it.pullY.v;
@@ -568,11 +563,10 @@ function frame() {
   sl.H += (sl.ae - sl.H) * (1 - Math.exp(-(dragging ? S.followDrag : S.follow) * r));
   if (Math.abs(sl.ae - sl.H) < 0.05) sl.H = sl.ae;
   sl.v = r > 0 ? (sl.H - was) / r : 0;
-  if (dragging || Math.abs(sl.v) > 6) sl.lastMove = now;
-  const quiet = !dragging && Math.abs(sl.v) <= L.N * S.quiet, re = Math.min(1, Math.abs(sl.v) / S.speed);
+  const re = Math.min(1, Math.abs(sl.v) / S.speed);
   const bob = phase === 'load' || reduce ? 0 : 10 * clamp(1 - (now - T0 - 900) / 2500); // floating as they land, then still
   for (const it of items) {
-    let p = slide(it, r, now, sl.ppx * sl.P, sl.ppy * sl.P, quiet, re), vis = true;
+    let p = slide(it, r, now, sl.ppx * sl.P, sl.ppy * sl.P, re), vis = true;
     if (phase === 'load') { vis = it.i === 0; p = LOADER(now); }
     else {
       if (it.ex) {

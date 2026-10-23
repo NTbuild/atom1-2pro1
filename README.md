@@ -2,7 +2,7 @@
 
 A website header with iPods. A ring turns behind a single iPod whose screen counts up to 100%. Then the other iPods burst out from behind it into a tilted row, float and settle, while the ring pushes out with them, larger and brighter. MENDES writes itself across the top and the menu rises from the bottom bar.
 
-The row is agrumeafarm.it's jar slider (used with permission) with iPods for jars, driven by its own numbers: the 10° row, the sizes, blur and brightness by distance from the middle, the wheel and drag glide with a fling, each iPod swinging, leaning and turning on its own spring as it travels, nearby iPods turning toward the pointer, and one full spin over 2 s only when the pointer rests on an iPod. Click an iPod to bring it to the middle. The middle iPod's screen shows a small player.
+The row is agrumeafarm.it's jar slider (used with permission) with iPods for jars, driven by its own numbers: the 10° row, the sizes, blur and brightness by distance from the middle, the wheel and drag glide with a fling, each iPod swinging, leaning and turning on its own spring as it travels, and nearby iPods turning toward the pointer. Hovering never spins an iPod: clicking one spins it round once (over 2 s) and brings it to the middle. The middle iPod's screen shows a small player.
 
 The ring, wordmark and menu follow blink.capital's intro: its ring video and bloom, the letter-by-letter wordmark in Guida Mono Pro, the frosted menu rising 50px over 3 s. The ring also turns with the row, as the circle behind the jars does. The iPods are built in three.js; their screens play the NomadaToast clips.
 
