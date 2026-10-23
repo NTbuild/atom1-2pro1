@@ -1,11 +1,13 @@
 <!doctype html>
 <!--
   MENDES — header.
-  Loader: the ring turns behind a single iPod whose screen counts up to 100%. Then four more iPods burst out from
-  behind it and curve into an arc, float and settle; MENDES writes itself across the top, the menu rises from the
-  bottom and the ring grows larger and brighter. The ring, wordmark and menu follow blink.capital's intro (ring
-  video and bloom, letter-by-letter wordmark, menu rise). Once it has settled, scroll, drag or the arrow keys turn
-  the arc (or click an iPod), and the iPod that comes to the front flips round to face you.
+  Loader: the ring turns behind a single iPod whose screen counts up to 100%. Then the other iPods burst out from
+  behind it into a tilted row, float and settle; MENDES writes itself across the top, the menu rises from the bottom
+  and the ring pushes out with the burst, larger and brighter. The ring, wordmark and menu follow blink.capital's
+  intro (ring video and bloom, letter-by-letter wordmark, menu rise). The row is agrumeafarm.it's jar slider (used
+  with permission) with iPods for jars: the same positions, sizes, blur and brightness, the wheel and drag glide
+  and fling, each iPod swinging, leaning and turning on its own spring as it travels, the pull toward the pointer,
+  and one full spin only when the pointer rests on an iPod. Click an iPod to bring it to the middle.
   three.js builds the iPods in code; their screens play the clips in assets/screens. One file, no build step.
   Serve it over http (the screens are videos drawn into WebGL), not file://.
 -->
@@ -21,7 +23,7 @@
 html,body{margin:0;height:100%;background:#000;overflow:hidden;overscroll-behavior:none}
 .hd{position:fixed;inset:0;overflow:hidden;background:#000;--sq:max(100vw,100vh);-webkit-user-select:none;user-select:none}
 /* the ring: blink.capital's ring video, kept square and centred; its edges fade out so it can sit small in the loader */
-.ring{position:absolute;left:50%;top:50%;width:var(--sq);height:var(--sq);margin:calc(var(--sq) / -2) 0 0 calc(var(--sq) / -2);object-fit:cover;pointer-events:none;opacity:0;
+.ring{position:absolute;left:50%;top:50%;width:var(--sq);height:var(--sq);margin:calc(var(--sq) / -2) 0 0 calc(var(--sq) / -2);object-fit:cover;pointer-events:none;opacity:0;transform-origin:50% 48%;
   -webkit-mask-image:radial-gradient(closest-side at 50% 48%,#000 82%,transparent 100%);mask-image:radial-gradient(closest-side at 50% 48%,#000 82%,transparent 100%);will-change:transform,opacity}
 .hd canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 .hd canvas.grab{cursor:grab}.hd canvas.point{cursor:pointer}.hd canvas.held{cursor:grabbing}
@@ -67,18 +69,38 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // ---------- settings ----------
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const fine = matchMedia('(hover: hover) and (pointer: fine)');
 const CONFIG = {
-  // clips in assets/screens: the first starts at the front, then round to the right; the last sits to its left
+  // clips in assets/screens: the first starts in the middle, then to the right; the last sits to its left
   screens: ['nomada-toast', 'viral-loop', 'supporter', 'x-ray', 'road-test', 'ai-studio'],
   loadMin: reduce ? 1200 : 3600, // the counter takes at least this long, ms (it also waits for the clips)
   holdAt100: 450,                // a beat on 100% before the burst, ms
-  tilt: -0.1,                    // the arc leans, left end higher (rad)
-  float: reduce ? 0 : 0.03,      // how far the iPods keep bobbing once settled
-  flip: !reduce,                 // the iPod that comes to the front spins round to face you
+  spin: true,                    // an iPod spins round once, only when the pointer rests on it
   ring: {                        // the ring video: scale, vertical shift (share of its size), opacity
-    load: { s: 0.5, y: -0.068, o: 0.55 },
-    end: { s: 1.08, y: 0.055, o: 1 },
-    dur: 2600
+    load: { s: 0.5, y: -0.059, o: 0.55 },
+    end: { s: 1.08, y: 0.054, o: 1 },
+    dur: 1400,                   // it grows with the burst, as one push…
+    push: reduce ? 0 : 1.6,      // …overshooting a little before it settles
+    flash: reduce ? 0 : 0.6,     // and flaring brighter as it goes
+    turn: -0.012,                // afterwards it turns with the carousel, deg per px scrolled
+    parallax: -14                // and drifts against the pointer, px
+  },
+  // the carousel: agrumeafarm.it's jar slider (used with permission), with its numbers as they ship there
+  slider: {
+    angle: 10, top: 0.55,                      // the row's tilt (deg) and centre line (share of the height)
+    spacing: 0.92, width: 0.5358 * 1.15,       // per quarter of the screen width
+    aspect: 1.66, maxH: 0.72,                  // iPod height to width; a cap on its height as a share of the screen
+    scale: [0.55, 1.35], falloff: 0.1,         // size at the edges and in the middle; a little smaller per spacing out
+    bright: [0.7, 1.1], blur: 4, speedBlur: 3.2, // brightness edge to middle; blur px by distance, and extra when moving fast
+    sway: 18,                                  // each iPod swings ±18° as it travels (a full cycle every three spacings)
+    offsets: [-0.053, 0.043, -0.024, 0.057, -0.048, 0.029, -0.038, 0.053], // each one sits a little higher or lower
+    spread: [0.55, 0.16],                      // the middle iPod gets a little more room
+    follow: 2.3, followDrag: 11,               // how fast the row catches up with the wheel or a drag (per second)
+    wheel: 1.15, drag: 1.5, fling: 190, flingMax: 3.5,
+    speed: 2400, speedLean: 6, speedTurn: 38, squash: 0.05, // on the move: lean, turn and shrink, by speed (px/s)
+    stiffness: 70, stiffnessVar: 0.3, damping: 9,           // each iPod's own spring, slightly different per iPod
+    near: { turn: 30, lean: 5, lift: 0.05, pull: 16, radius: 1.6, floor: 0.3, parallax: 26 }, // the pointer's pull
+    spinMs: 2000, dwell: 260, quiet: 1.4       // the hover spin: one turn, after a short rest, when the row is still
   }
 };
 
@@ -88,7 +110,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const eo = t => 1 - Math.pow(1 - t, 3);
 const eio = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const eback = (t, k = 1.3) => 1 + (k + 1) * Math.pow(t - 1, 3) + k * Math.pow(t - 1, 2);
-const wrap = (v, n) => ((v % n) + n) % n;
+const equint = t => t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2;
 
 // ---------- renderer, camera, light ----------
 const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
@@ -179,8 +201,8 @@ const MAT = {
   wheel: new THREE.MeshStandardMaterial({ map: wheelTexture(), metalness: 0.05, roughness: 0.55 })
 };
 
-const arc = new THREE.Group();
-scene.add(arc);
+const row = new THREE.Group();
+scene.add(row);
 const SW = 512, SH = 384; // screen canvas, 4:3 like the clips
 function pod(name, i) {
   const g = new THREE.Group(), z = D / 2;
@@ -195,23 +217,43 @@ function pod(name, i) {
   part(GEO.bezel, MAT.glass, SY, 0.0032);
   part(GEO.wheel, MAT.wheel, WY, 0.0016);
   part(GEO.button, MAT.face, WY, 0.0024);
-  arc.add(g);
+  row.add(g);
   const video = document.createElement('video');
   Object.assign(video, { src: `assets/screens/${name}.mp4`, muted: true, loop: true, playsInline: true, preload: 'auto' });
   const poster = new Image(); poster.src = `assets/screens/${name}.jpg`;
-  const it = { i, name, g, ctx: canvas.getContext('2d'), tex, video, poster, ph: i * 1.7 + 0.4, hov: 0, flip: null, ex: null };
+  const spring = () => ({ v: 0, vel: 0 });
+  const it = { i, name, g, ctx: canvas.getContext('2d'), tex, video, poster, ph: i * 1.7 + 0.4, ex: null, blurN: 0, bright: 1, front: 0,
+    turn: spring(), lean: spring(), lift: spring(), pullX: spring(), pullY: spring(), // each iPod's own springs, as the jars have
+    over: false, queued: false, enterT: -1, dwell: -1, spinT: -1 };
   shell.userData.it = it;
+  // the mask pass reads each iPod's blur and brightness from here
+  g.traverse(m => { if (m.isMesh) m.onBeforeRender = (r, s, c, geo, mat) => { if (mat === maskMat) { mat.uniforms.uBlur.value = it.blurN; mat.uniforms.uBright.value = it.bright; mat.uniformsNeedUpdate = true; } }; });
+  g.rotation.order = 'ZYX'; // turn about the iPod's own long axis, then lean it in the screen plane, like the jars
   return it;
 }
+// per-iPod blur and brightness, drawn into a mask the depth-of-field pass reads
+const maskMat = new THREE.ShaderMaterial({
+  uniforms: { uBlur: { value: 0 }, uBright: { value: 1 } },
+  vertexShader: `void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform float uBlur, uBright; void main() { gl_FragColor = vec4(uBlur, uBright * 0.5, 0.0, 1.0); }`
+});
 const items = CONFIG.screens.map(pod);
-const N = items.length;
+const count = items.length;
 
-// where an iPod sits on the arc for a (fractional) slot: 0 is the front, ±1 beside it, ±2 at the screen edges
-function pose(s) {
-  const a = Math.abs(s), sg = Math.sign(s);
-  return { x: sg * (1.62 * Math.min(a, 1) + 1.68 * Math.max(0, a - 1)), y: -0.08 * s * s, z: -2 * (1 - Math.exp(-1.5 * a)), ry: -0.74 * Math.tanh(0.65 * s) };
+// ---------- the carousel's layout, in screen pixels (agrumeafarm.it's sizes) ----------
+const L = {};
+function layout() {
+  const S = CONFIG.slider, w = innerWidth, h = innerHeight, small = w <= 480, mid = !small && w <= 1024;
+  const Z = w / (small || mid ? 3 : 4);
+  Object.assign(L, { w, h, N: Z * (small ? 1.15 : mid ? 1.265 : S.spacing), u: Z * (small ? 0.73 * 1.15 : mid ? 0.7875 * 1.15 : S.width) });
+  L.R = L.u * S.aspect;
+  if (L.R > h * S.maxH) { L.R = h * S.maxH; L.u = L.R / S.aspect; }
+  L.F = count * L.N; L.j = 2 * L.u; L.Y = 3 * L.N;
+  L.top = (small ? 0.45 : mid ? 0.43 : S.top) * h;
+  L.cos = Math.cos(S.angle * Math.PI / 180); L.sin = Math.sin(S.angle * Math.PI / 180);
 }
-const slotOf = (it, off) => wrap(it.i - off + N / 2, N) - N / 2;
+// where an iPod sits along the looping row for a scroll offset H (px)
+const trackX = (i, H) => (((i * L.N + L.u / 2 + H + L.j) % L.F) + L.F) % L.F - L.j;
 
 // ---------- the floor (loader only): the iPod's reflection, fading with distance ----------
 const floorShader = {
@@ -263,7 +305,7 @@ function player(g, v, a) {
   g.fillStyle = '#fff'; g.fillRect(22, SH - 14, (SW - 44) * clamp(t / d), 3);
   g.restore();
 }
-function drawScreen(it, s, now, appear) {
+function drawScreen(it, now, appear) {
   const g = it.ctx;
   g.fillStyle = '#000'; g.fillRect(0, 0, SW, SH);
   if (phase === 'load') { digits(g, appear); it.tex.needsUpdate = true; return; }
@@ -271,7 +313,7 @@ function drawScreen(it, s, now, appear) {
   const v = it.video, src = v.readyState >= 2 ? v : it.poster;
   if (src === v || it.poster.complete) { g.globalAlpha = it.i === 0 ? u : 1; g.drawImage(src, 0, 0, SW, SH); g.globalAlpha = 1; }
   if (it.i === 0 && u < 1) digits(g, 1 - u);
-  player(g, v, (1 - clamp(Math.abs(s) * 2.2)) * u);
+  player(g, v, it.front * u);
   it.tex.needsUpdate = true;
 }
 
@@ -283,72 +325,133 @@ for (const it of items) { waits.push(ready(it.video)); it.video.load(); }
 let loaded = 0;
 waits.forEach(p => p.then(() => loaded++, () => loaded++));
 
-// ---------- interaction (once the arc has settled) ----------
-let offset = 0, target = 0, settled = false, drag = null, hover = null, wheelAcc = 0, lastStep = 0;
-const pointer = new THREE.Vector2(9, 9), ray = new THREE.Raycaster(), par = { x: 0, y: 0 };
-function goTo(to) {
-  to = Math.round(to);
-  const was = Math.round(target);
-  target = to;
-  if (to === was || !CONFIG.flip) return;
-  const front = items[wrap(to, N)];
-  front.flip = { t0: performance.now(), dir: to > was ? -1 : 1 };
-}
-function pick(e) {
-  const r = cv.getBoundingClientRect();
-  pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+// ---------- interaction (once the burst has landed), as the jar slider takes it ----------
+// sl.H is the row's scroll offset (px), easing toward sl.ae, which the wheel, a drag or a fling set
+const sl = { H: 0, ae: 0, v: 0, lastMove: -1, P: 0, ppx: 0, ppy: 0, mx: 0, my: 0, inside: false, drag: null, flingV: 0 };
+let settled = false, hover = null;
+const pointer = new THREE.Vector2(9, 9), ray = new THREE.Raycaster();
+function pick(x, y) {
+  pointer.set(x / L.w * 2 - 1, -y / L.h * 2 + 1);
   ray.setFromCamera(pointer, camera);
   const hit = ray.intersectObjects(items.filter(it => it.g.visible).map(it => it.g.children[0]), false)[0];
   return hit ? hit.object.userData.it : null;
 }
-cv.addEventListener('pointermove', e => {
-  par.x = e.clientX / innerWidth * 2 - 1; par.y = e.clientY / innerHeight * 2 - 1;
+// pointer enter and leave per iPod, which queue its hover spin
+function hoverTo(h, now) {
+  if (h === hover) return;
+  if (hover) { hover.over = false; hover.queued = false; }
+  if (h) { h.over = true; h.queued = fine.matches; h.enterT = now; }
+  hover = h;
+}
+hd.addEventListener('pointermove', e => {
+  sl.inside = e.pointerType !== 'touch'; sl.mx = e.clientX; sl.my = e.clientY;
   if (!settled) return;
-  if (drag) {
-    const dx = e.clientX - drag.x;
-    drag.moved = Math.max(drag.moved, Math.abs(dx));
-    target = drag.o - dx / (innerWidth * 0.24);
+  const d = sl.drag, now = performance.now();
+  if (d && e.pointerId === d.id) {
+    if (!d.on) {
+      if (Math.abs(e.clientX - d.x0) <= 6) return;
+      cv.setPointerCapture(e.pointerId); d.on = true; d.x = e.clientX; d.t = e.timeStamp || now; cv.className = 'held';
+      return;
+    }
+    const dx = e.clientX - d.x, t = e.timeStamp || now;
+    sl.flingV = sl.flingV * 0.72 + dx / Math.max(1, t - d.t) * 0.28;
+    d.x = e.clientX; d.t = t;
+    sl.ae += dx * CONFIG.slider.drag;
+    return;
   }
-  hover = drag ? null : pick(e);
-  cv.className = drag ? 'held' : hover && Math.abs(slotOf(hover, offset)) > 0.5 ? 'point' : 'grab';
-});
+  hoverTo(pick(e.clientX, e.clientY), now);
+  cv.className = hover ? 'point' : 'grab';
+}, { passive: true });
+hd.addEventListener('pointerleave', () => { sl.inside = false; hoverTo(null, performance.now()); });
 cv.addEventListener('pointerdown', e => {
   if (!settled) return;
-  drag = { x: e.clientX, o: target, moved: 0, from: Math.round(target) };
-  cv.setPointerCapture(e.pointerId); cv.className = 'held';
+  sl.drag = { id: e.pointerId, x0: e.clientX, x: e.clientX, t: e.timeStamp, on: false };
+  sl.flingV = 0;
 });
 const release = e => {
-  if (!drag) return;
-  const d = drag; drag = null; cv.className = 'grab';
-  if (d.moved < 6) {
-    const it = pick(e);
-    target = d.from;
-    if (it) { const s = Math.round(slotOf(it, d.from)); if (s) goTo(d.from + s); }
-  } else { target = d.from; goTo(Math.round(d.o - (e.clientX - d.x) / (innerWidth * 0.24))); }
+  const d = sl.drag; if (!d || e.pointerId !== d.id) return;
+  sl.drag = null;
+  if (d.on) {
+    try { cv.releasePointerCapture(e.pointerId); } catch {}
+    const S = CONFIG.slider;
+    sl.ae += clamp(sl.flingV, -S.flingMax, S.flingMax) * S.drag * S.fling;
+  } else {
+    // a click brings that iPod to the middle
+    const it = pick(e.clientX, e.clientY);
+    if (it) sl.ae += L.w / 2 - trackX(it.i, sl.ae);
+  }
+  sl.flingV = 0;
+  cv.className = hover ? 'point' : 'grab';
 };
 cv.addEventListener('pointerup', release);
 cv.addEventListener('pointercancel', release);
-cv.addEventListener('pointerleave', () => { hover = null; });
-cv.addEventListener('wheel', e => {
+hd.addEventListener('wheel', e => {
   e.preventDefault();
   if (!settled) return;
-  wheelAcc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-  const now = performance.now();
-  if (Math.abs(wheelAcc) > 40 && now - lastStep > 480) { goTo(Math.round(target) + Math.sign(wheelAcc)); wheelAcc = 0; lastStep = now; }
+  sl.ae -= (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * CONFIG.slider.wheel;
 }, { passive: false });
 addEventListener('keydown', e => {
   if (!settled) return;
-  if (e.key === 'ArrowRight') goTo(Math.round(target) + 1);
-  else if (e.key === 'ArrowLeft') goTo(Math.round(target) - 1);
+  if (e.key === 'ArrowRight') sl.ae -= L.N;
+  else if (e.key === 'ArrowLeft') sl.ae += L.N;
 });
+
+// ---------- blur and brightness per iPod (the jars' CSS blur() and brightness()) ----------
+// The scene renders into a target (tone-mapped and sRGB-encoded as it would be on screen: three does that for a target
+// flagged as XR) and, with an override material, into a mask holding each iPod's blur and brightness. One pass then
+// blurs and brightens each iPod by its own amount, keeping the transparency the ring shows through.
+const dpr = Math.min(2, devicePixelRatio);
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+rt.texture.colorSpace = THREE.SRGBColorSpace;
+rt.isXRRenderTarget = true;
+rt.depthTexture = new THREE.DepthTexture(1, 1);
+const maskRT = new THREE.WebGLRenderTarget(1, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+const dof = new THREE.ShaderMaterial({
+  uniforms: { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, tMask: { value: maskRT.texture }, res: { value: new THREE.Vector2(1, 1) },
+    near: { value: camera.near }, far: { value: camera.far }, maxR: { value: 9 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `#include <packing>
+    uniform sampler2D tColor, tDepth, tMask; uniform vec2 res; uniform float near, far, maxR;
+    varying vec2 vUv;
+    float dist(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, near, far); }
+    float coc(vec2 uv) { return texture2D(tMask, uv).r * maxR; }
+    void main() {
+      vec4 c0 = texture2D(tColor, vUv), m0 = texture2D(tMask, vUv);
+      float d0 = c0.a > 0.004 ? dist(vUv) : 1e5, r0 = m0.r * maxR, reach = r0;
+      for (int i = 0; i < 8; i++) reach = max(reach, coc(vUv + vec2(cos(float(i) * 0.7854), sin(float(i) * 0.7854)) * maxR / res));
+      vec4 sum = c0; float n = 1.0;
+      if (reach > 0.5) {
+        for (int i = 0; i < 56; i++) {
+          float fi = float(i) + 0.5, r = sqrt(fi / 56.0) * maxR, th = fi * 2.39996;
+          vec2 uv = vUv + vec2(cos(th), sin(th)) * r / res;
+          vec4 c = texture2D(tColor, uv);
+          float d = c.a > 0.004 ? dist(uv) : 1e5, rs = coc(uv);
+          // a soft sample level with or in front of this pixel spreads over it; a soft pixel gathers what lies behind it
+          float w = max(step(r, rs) * step(d, d0 + 0.05), step(r, r0) * step(d0 - 0.05, d));
+          sum += c * w; n += w;
+        }
+      }
+      vec4 col = sum / n;
+      gl_FragColor = vec4(col.rgb * (m0.a > 0.5 ? m0.g * 2.0 : 1.0), col.a);
+    }`,
+  depthTest: false, depthWrite: false
+});
+const post = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), dof);
+post.frustumCulled = false;
+const postScene = new THREE.Scene(), postCam = new THREE.Camera();
+postScene.add(post);
 
 // ---------- layout ----------
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  camera.position.z = 5.4 * Math.max(1, Math.pow(16 / 9 / camera.aspect, 0.85)); // narrower screens step back to keep the arc
   camera.updateProjectionMatrix();
+  rt.setSize(Math.round(w * dpr), Math.round(h * dpr));
+  maskRT.setSize(Math.round(w * dpr), Math.round(h * dpr));
+  dof.uniforms.res.value.set(Math.round(w * dpr), Math.round(h * dpr));
+  dof.uniforms.maxR.value = 2 * (CONFIG.slider.blur + CONFIG.slider.speedBlur) * dpr; // a disc about twice a CSS blur's radius
+  layout();
 }
 addEventListener('resize', resize);
 resize();
@@ -356,15 +459,76 @@ resize();
 // ---------- the timeline ----------
 const t0 = performance.now();
 let phase = 'load', T100 = 0, T0 = 0, shown = 0;
+sl.H = sl.ae = sl.H0 = L.w / 2 - L.u / 2; // the first iPod starts in the middle
 function reveal(now) {
   phase = 'reveal'; T0 = now;
   hd.classList.add('on');
   for (const it of items) it.video.play().catch(() => {});
-  // the other iPods burst out from behind the front one, nearest first, and spin as they fly
+  // the front iPod rises into its place and the others burst out from behind it, nearest first
   for (const it of items) {
-    const s = slotOf(it, 0), a = Math.abs(s);
-    if (it.i && a < 2.9) it.ex = { t0: now + 60 + 90 * (a - 1) + (s > 0 ? 40 : 0), dur: 1350, spin: reduce ? 0 : (s > 0 ? -1 : 1) * Math.PI * 2 };
+    const x = trackX(it.i, sl.H), a = Math.abs(Math.round((x - L.w / 2) / L.N));
+    it.ex = it.i ? { t0: now + 60 + 90 * (a - 1) + (x > L.w / 2 ? 40 : 0), dur: 1350, from: 'behind' } : { t0: now, dur: 1100, from: 'loader' };
   }
+}
+const spring = (s, target, k, r) => {
+  s.vel += ((target - s.v) * k - s.vel * CONFIG.slider.damping) * r;
+  s.v += s.vel * r;
+  if (Math.abs(s.vel) < 0.001 && Math.abs(target - s.v) < 0.001) { s.v = target; s.vel = 0; }
+};
+// one iPod's pose in the jar slider, in screen px (it also steps that iPod's springs and its hover spin)
+function slide(it, r, now, g, E, quiet, re) {
+  const S = CONFIG.slider, i = it.i;
+  const x = trackX(i, sl.H), q = x / L.w;
+  const fx = (q + S.spread[0] * S.spread[1] * Math.tanh((q - 0.5) / S.spread[1])) * L.w;
+  const cen = q >= 0 && q <= 1 ? Math.sin(q * Math.PI) : 0;
+  const dist = Math.abs(q - 0.5) / (L.N / L.w);
+  const scale = (S.scale[0] + cen * (S.scale[1] - S.scale[0])) * (1 - S.falloff * Math.min(1, dist));
+  const sway = Math.sin((i * L.N + sl.H) / L.Y * Math.PI * 2) * S.sway;
+  const offY = S.offsets[i % S.offsets.length] * L.R, Et = fx - L.w / 2;
+  const cx = L.w / 2 + Et * L.cos - offY * L.sin, cy = L.top + Et * L.sin + offY * L.cos;
+  let turn = reduce ? 0 : -clamp(sl.v / S.speed, -1, 1) * S.speedTurn, lean = -Math.sign(sl.v) * re * S.speedLean, lift = 0, pullX = 0, pullY = 0;
+  if (sl.P > 0) { // the pointer: nearby iPods turn and lean toward it, lift a little and are pulled its way
+    const vx = sl.mx - cx, vy = sl.my - cy, along = vx * L.cos + vy * L.sin, across = -vx * L.sin + vy * L.cos;
+    const We = L.u * S.near.radius, near = Math.exp(-(along * along + across * across) / (We * We)), side = Math.tanh(along / We);
+    const pa = sl.P * (S.near.floor + (1 - S.near.floor) * near), ot = scale / S.scale[1];
+    turn += side * S.near.turn * pa;
+    lean += side * S.near.lean * near * sl.P;
+    lift = S.near.lift * near * sl.P;
+    pullX = side * S.near.pull * near * sl.P + (g * L.cos + E * L.sin) * S.near.parallax * ot;
+    pullY = Math.tanh(across / (L.R * 0.8)) * S.near.pull * near * sl.P + (-g * L.sin + E * L.cos) * S.near.parallax * ot;
+  }
+  const k = S.stiffness * (1 - S.stiffnessVar / 2 + S.stiffnessVar * ((i * 0.618034) % 1));
+  spring(it.turn, turn, k, r); spring(it.lean, lean, k, r); spring(it.lift, lift, k, r); spring(it.pullX, pullX, k, r); spring(it.pullY, pullY, k, r);
+  // the hover spin: queued when the pointer comes on; it starts once the row is quiet, after a short rest
+  // (at once if the pointer came on after the row had stopped), and runs one full turn
+  if (!quiet || !it.over) it.dwell = -1; else if (it.dwell < 0) it.dwell = now;
+  if (CONFIG.spin && fine.matches && it.over && it.queued && it.spinT < 0 && it.dwell >= 0 && (it.enterT > sl.lastMove || now - it.dwell >= S.dwell)) { it.spinT = now; it.queued = false; }
+  let spin = 0;
+  if (it.spinT >= 0) { const t = (now - it.spinT) / S.spinMs; if (t >= 1) it.spinT = -1; else spin = equint(t); }
+  const ex = Et + it.pullX.v, ey = offY + it.pullY.v;
+  it.front = 1 - clamp(dist * 1.8);
+  return {
+    sx: L.w / 2 + ex * L.cos - ey * L.sin, sy: L.top + ex * L.sin + ey * L.cos,
+    hpx: L.R * scale * (1 - re * re * S.squash) * (1 + it.lift.v),
+    rot: S.angle + sway + it.lean.v,                 // deg, clockwise on screen
+    turn: (it.turn.v / 360 + spin) * Math.PI * 2,    // about the iPod's own long axis
+    blur: Math.min(S.blur, dist * dist) + re * re * S.speedBlur,
+    bright: S.bright[0] + cen * (S.bright[1] - S.bright[0]),
+    z: cen * 0.3                                     // the middle one a little nearer, so a neighbour never cuts into it
+  };
+}
+const LOADER = now => ({ sx: L.w / 2, sy: L.h / 2, hpx: 0.573 * L.h, rot: 0, turn: reduce ? 0 : 0.06 * Math.sin((now - t0) * 0.0009), blur: 0, bright: 1, z: 0 });
+const BEHIND = () => ({ sx: L.w / 2, sy: L.h / 2, hpx: 0.5 * L.h, rot: 0, turn: 0, blur: 0, bright: 0.85, z: -0.45 });
+const mixPose = (a, b, e, e2) => ({ sx: lerp(a.sx, b.sx, e), sy: lerp(a.sy, b.sy, e), hpx: lerp(a.hpx, b.hpx, e), z: lerp(a.z, b.z, e),
+  rot: lerp(a.rot, b.rot, e2), turn: lerp(a.turn, b.turn, e2), blur: lerp(a.blur, b.blur, e2), bright: lerp(a.bright, b.bright, e2) });
+// put an iPod where that screen pose says, whatever its depth
+function place(it, p) {
+  const k = 2 * Math.tan(camera.fov * Math.PI / 360) * (camera.position.z - p.z) / L.h; // world units per px at its depth
+  it.g.position.set((p.sx - L.w / 2) * k, (L.h / 2 - p.sy) * k, p.z);
+  it.g.scale.setScalar(p.hpx * k / H);
+  it.g.rotation.set(0, p.turn, -p.rot * Math.PI / 180);
+  it.blurN = p.blur / (CONFIG.slider.blur + CONFIG.slider.speedBlur);
+  it.bright = p.bright;
 }
 function frame() {
   requestAnimationFrame(frame);
@@ -385,51 +549,55 @@ function frame() {
   }
   if (phase === 'reveal' && !settled && now - T0 > 1800) { settled = true; cv.className = 'grab'; }
 
-  // ring: small and dim around the loader, then larger and brighter (blink.capital's bloom)
-  const R = CONFIG.ring, k = phase === 'load' ? 0 : eio(clamp((now - T0) / R.dur));
-  ringV.style.transform = `translateY(${(lerp(R.load.y, R.end.y, k) * 100).toFixed(3)}%) scale(${lerp(R.load.s, R.end.s, k).toFixed(4)})`;
-  ringV.style.opacity = (lerp(R.load.o, R.end.o, k) * clamp((now - t0) / 1200)).toFixed(3);
+  // ring: small and dim around the loader, then it pushes out with the burst, larger and brighter
+  const R = CONFIG.ring, u = phase === 'load' ? 0 : clamp((now - T0 - 40) / R.dur), k = eback(u, R.push), flare = R.flash * Math.max(0, 1 - u * 2.2);
+  // afterwards it turns with the row and drifts against the pointer, as the circle behind the jars does
+  ringV.style.transform = `translate(${(sl.ppx * sl.P * R.parallax).toFixed(2)}px, ${(lerp(R.load.y, R.end.y, k) * 100).toFixed(3)}%) scale(${lerp(R.load.s, R.end.s, k).toFixed(4)}) rotate(${((sl.H - sl.H0) * R.turn).toFixed(3)}deg)`;
+  ringV.style.opacity = (lerp(R.load.o, R.end.o, eo(clamp(u * 4))) * clamp((now - t0) / 1200)).toFixed(3);
+  ringV.style.filter = flare > 0.005 ? `brightness(${(1 + flare).toFixed(3)})` : '';
 
   // floor reflection only while the iPod stands on it
   floor.material.uniforms.opacity.value = phase === 'load' ? appear : 1 - clamp((now - T0) / 450);
   floor.visible = floor.material.uniforms.opacity.value > 0.001;
 
-  offset += (target - offset) * (1 - Math.exp(-dt / 150));
-  par.sx = lerp(par.sx || 0, par.x, 0.05); par.sy = lerp(par.sy || 0, par.y, 0.05);
-  arc.rotation.set(par.sy * 0.035, par.sx * 0.06, phase === 'load' ? 0 : CONFIG.tilt * eio(clamp((now - T0 - 100) / 1400)));
-
-  const amp = phase === 'load' ? 0 : CONFIG.float + (reduce ? 0 : 0.09 * clamp(1 - (now - T0 - 900) / 3000)); // floating, then settling
+  // the row: it eases toward where the wheel, a drag or a fling sent it; its speed leans, turns and blurs the iPods
+  const S = CONFIG.slider, r = Math.min(1 / 30, dt / 1000), live = !reduce && sl.inside && fine.matches && settled;
+  if (live) { const ne = 1 - Math.exp(-4 * r); sl.ppx += (clamp(sl.mx / L.w * 2 - 1, -1, 1) - sl.ppx) * ne; sl.ppy += (clamp(sl.my / L.h * 2 - 1, -1, 1) - sl.ppy) * ne; }
+  sl.P += ((live ? 1 : 0) - sl.P) * (1 - Math.exp(-3 * r)); if (!live && sl.P < 0.001) sl.P = 0;
+  const dragging = !!(sl.drag && sl.drag.on), was = sl.H;
+  sl.H += (sl.ae - sl.H) * (1 - Math.exp(-(dragging ? S.followDrag : S.follow) * r));
+  if (Math.abs(sl.ae - sl.H) < 0.05) sl.H = sl.ae;
+  sl.v = r > 0 ? (sl.H - was) / r : 0;
+  if (dragging || Math.abs(sl.v) > 6) sl.lastMove = now;
+  const quiet = !dragging && Math.abs(sl.v) <= L.N * S.quiet, re = Math.min(1, Math.abs(sl.v) / S.speed);
+  const bob = phase === 'load' || reduce ? 0 : 10 * clamp(1 - (now - T0 - 900) / 2500); // floating as they land, then still
   for (const it of items) {
-    const s = slotOf(it, offset), P = pose(s);
-    let { x, y, z, ry } = P, rz = 0, sc = 1, vis = Math.abs(s) < 2.95;
-    if (phase === 'load') {
-      vis = it.i === 0; x = y = z = 0;
-      ry = reduce ? 0 : 0.06 * Math.sin((now - t0) * 0.0009);
-    } else {
-      if (it.i === 0) y += Math.sin(Math.PI * clamp((now - T0) / 900)) * 0.07; // the front iPod lifts as the others burst out
+    let p = slide(it, r, now, sl.ppx * sl.P, sl.ppy * sl.P, quiet, re), vis = true;
+    if (phase === 'load') { vis = it.i === 0; p = LOADER(now); }
+    else {
       if (it.ex) {
-        const u = clamp((now - it.ex.t0) / it.ex.dur), e = eback(u), e2 = eo(u);
-        x = lerp(0, x, e); y = lerp(0, y, e); z = lerp(-0.4, z, e); ry += (1 - e2) * it.ex.spin; sc = lerp(0.85, 1, e2);
+        const u = clamp((now - it.ex.t0) / it.ex.dur);
+        p = mixPose(it.ex.from === 'loader' ? LOADER(now) : BEHIND(), p, eback(u), eo(u));
         if (u >= 1) it.ex = null;
       }
-      y += amp * Math.sin(now * 0.0012 + it.ph);
-      rz += amp * 0.5 * Math.sin(now * 0.001 + it.ph * 1.7);
-      ry += amp * 0.4 * Math.sin(now * 0.0009 + it.ph * 0.6);
-      if (it.flip) { const u = clamp((now - it.flip.t0) / 950); ry += it.flip.dir * Math.PI * 2 * eio(u); if (u >= 1) it.flip = null; }
-      it.hov += ((hover === it && Math.abs(s) > 0.5 ? 1 : 0) - it.hov) * 0.12;
-      z += it.hov * 0.14;
+      p.sy += bob * Math.sin(now * 0.0012 + it.ph);
     }
+    vis = vis && p.sx > -p.hpx && p.sx < L.w + p.hpx;
     it.g.visible = vis;
     if (!vis) continue;
-    it.g.position.set(x, y, z);
-    it.g.rotation.set(0, ry, rz);
-    it.g.scale.setScalar(sc);
-    drawScreen(it, s, now, appear);
+    place(it, p);
+    drawScreen(it, now, appear);
   }
-  renderer.render(scene, camera);
+  // mask (each iPod's blur and brightness), then the scene, then the pass that applies them
+  const fv = floor.visible;
+  floor.visible = false; scene.overrideMaterial = maskMat;
+  renderer.setRenderTarget(maskRT); renderer.render(scene, camera);
+  scene.overrideMaterial = null; floor.visible = fv;
+  renderer.setRenderTarget(rt); renderer.render(scene, camera);
+  renderer.setRenderTarget(null); renderer.render(postScene, postCam);
 }
 frame();
-if (/[?&]tgtest/.test(location.search)) window.__h = { items, get phase() { return phase; }, get pct() { return pct; }, goTo, camera, CONFIG };
+if (/[?&]tgtest/.test(location.search)) window.__h = { items, get phase() { return phase; }, get pct() { return pct; }, get T0() { return T0; }, camera, CONFIG, sl, L, pick };
 </script>
 </body>
 </html>
